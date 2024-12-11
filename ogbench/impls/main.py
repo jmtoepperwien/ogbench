@@ -11,11 +11,11 @@ import wandb
 from absl import app, flags
 from agents import agents
 from ml_collections import config_flags
-from utils.datasets import Dataset, GCDataset, HGCDataset
-from utils.env_utils import make_env_and_datasets
-from utils.evaluation import evaluate
-from utils.flax_utils import restore_agent, save_agent
-from utils.log_utils import CsvLogger, get_exp_name, get_flag_dict, get_wandb_video, setup_wandb
+from ogbench.impls.utils.datasets import Dataset, GCDataset, HGCDataset
+from ogbench.impls.utils.env_utils import make_env_and_datasets
+from ogbench.impls.utils.evaluation import evaluate
+from ogbench.impls.utils.flax_utils import restore_agent, save_agent
+from ogbench.impls.utils.log_utils import CsvLogger, get_exp_name, get_flag_dict, get_wandb_video, setup_wandb
 
 FLAGS = flags.FLAGS
 
