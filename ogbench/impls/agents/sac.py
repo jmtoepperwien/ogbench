@@ -20,7 +20,7 @@ class SACAgent(flax.struct.PyTreeNode):
 
     def critic_loss(self, batch, grad_params, rng):
         """Compute the SAC critic loss."""
-        next_dist = self.network.select('actor')(batch['next_observations'])
+        next_dist = self.network.select('actor')(batch['next_observations'], batch['actor_goals'])
         next_actions, next_log_probs = next_dist.sample_and_log_prob(seed=rng)
 
         next_qs = self.network.select('target_critic')(batch['next_observations'], next_actions)
