@@ -23,7 +23,7 @@ class SACAgent(flax.struct.PyTreeNode):
         next_dist = self.network.select('actor')(batch['next_observations'], batch['actor_goals'])
         next_actions, next_log_probs = next_dist.sample_and_log_prob(seed=rng)
 
-        next_qs = self.network.select('target_critic')(batch['next_observations'], next_actions)
+        next_qs = self.network.select('target_critic')(batch['next_observations'], batch['actor_goals'], next_actions)
         if self.config['min_q']:
             next_q = jnp.min(next_qs, axis=0)
         else:
