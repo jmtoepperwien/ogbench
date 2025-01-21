@@ -8,6 +8,7 @@ import ml_collections
 import optax
 from ogbench.impls.utils.flax_utils import ModuleDict, TrainState, nonpytree_field
 from ogbench.impls.utils.networks import GCActor, GCValue, LogParam
+from ml_collections import FrozenConfigDict
 
 
 class SACAgent(flax.struct.PyTreeNode):
@@ -149,6 +150,9 @@ class SACAgent(flax.struct.PyTreeNode):
         """
         rng = jax.random.PRNGKey(seed)
         rng, init_rng = jax.random.split(rng, 2)
+
+        if isinstance(config, FrozenConfigDict):
+            config = config.as_configdict()
 
         action_dim = ex_actions.shape[-1]
 
