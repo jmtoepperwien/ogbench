@@ -212,6 +212,18 @@ def get_config():
             state_dependent_std=True,  # Whether to use state-dependent standard deviations for actor.
             actor_fc_scale=0.01,  # Final layer initialization scale for actor.
             min_q=True,  # Whether to use min Q (True) or mean Q (False).
+            dataset_class='GCDataset',  # Dataset class name.
+            value_p_curgoal=0.0,  # Probability of using the current state as the value goal.
+            value_p_trajgoal=1.0,  # Probability of using a future state in the same trajectory as the value goal.
+            value_p_randomgoal=0.0,  # Probability of using a random state as the value goal.
+            value_geom_sample=True,  # Whether to use geometric sampling for future value goals.
+            actor_p_curgoal=0.0,  # Probability of using the current state as the actor goal.
+            actor_p_trajgoal=1.0,  # Probability of using a future state in the same trajectory as the actor goal.
+            actor_p_randomgoal=0.0,  # Probability of using a random state as the actor goal.
+            actor_geom_sample=False,  # Whether to use geometric sampling for future actor goals.
+            gc_negative=False,  # Unused (defined for compatibility with GCDataset).
+            p_aug=0.0,  # Probability of applying image augmentation.
+            frame_stack=ml_collections.config_dict.placeholder(int),  # Number of frames to stack.
         )
     )
     return config
