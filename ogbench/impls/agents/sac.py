@@ -32,7 +32,7 @@ class SACAgent(flax.struct.PyTreeNode):
         target_q = batch['rewards'] + self.config['discount'] * batch['masks'] * next_q
         target_q = target_q - self.config['discount'] * batch['masks'] * next_log_probs * self.network.select('alpha')()
 
-        q = self.network.select('critic')(batch['observations'], batch['actions'], params=grad_params)
+        q = self.network.select('critic')(batch['observations'], batch['actor_goals'], batch['actions'], params=grad_params)
         critic_loss = jnp.square(q - target_q).mean()
 
         return critic_loss, {
@@ -45,10 +45,10 @@ class SACAgent(flax.struct.PyTreeNode):
     def actor_loss(self, batch, grad_params, rng):
         """Compute the SAC actor loss."""
         # Actor loss.
-        dist = self.network.select('actor')(batch['observations'], params=grad_params)
+        dist = self.network.select('actor')(batch['observations'], batch['actor_goals'], params=grad_params)
         actions, log_probs = dist.sample_and_log_prob(seed=rng)
 
-        qs = self.network.select('critic')(batch['observations'], actions)
+        qs = self.network.select('critic')(batch['observations'], batch['actor_goals'], actions)
         if self.config['min_q']:
             q = jnp.min(qs, axis=0)
         else:
