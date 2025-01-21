@@ -151,6 +151,10 @@ class SACAgent(flax.struct.PyTreeNode):
         rng = jax.random.PRNGKey(seed)
         rng, init_rng = jax.random.split(rng, 2)
 
+        # This may not work, but was defined like that in crl.py
+        # Is used later for the network and seems to fix dimension problems
+        ex_goals = ex_observations
+
         if isinstance(config, FrozenConfigDict):
             config = config.as_configdict()
 
@@ -180,9 +184,9 @@ class SACAgent(flax.struct.PyTreeNode):
         alpha_def = LogParam()
 
         network_info = dict(
-            critic=(critic_def, (ex_observations, None, ex_actions)),
+            critic=(critic_def, (ex_observations, ex_goals, ex_actions)),
             target_critic=(copy.deepcopy(critic_def), (ex_observations, None, ex_actions)),
-            actor=(actor_def, (ex_observations, None)),
+            actor=(actor_def, (ex_observations, ex_goals)),
             alpha=(alpha_def, ()),
         )
         networks = {k: v[0] for k, v in network_info.items()}
