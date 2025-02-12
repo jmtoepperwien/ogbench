@@ -172,6 +172,7 @@ def save_agent(agent, save_dir, epoch):
         agent=flax.serialization.to_state_dict(agent),
     )
     save_path = os.path.join(save_dir, f'params_{epoch}.pkl')
+    print(f"ogbench save_path: {save_path}")
     with open(save_path, 'wb') as f:
         pickle.dump(save_dict, f)
 
