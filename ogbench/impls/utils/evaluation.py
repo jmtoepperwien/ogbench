@@ -111,9 +111,6 @@ def evaluate(
         else:
             renders.append(np.array(render))
 
-    success_all = stats['success']
-    for k, v in stats.items():
-        stats[f"{k}_mean"] = np.mean(v)
+    stats_aggregated = {k: np.mean(v) for k, v in stats.items()}
 
-    stats['success_all'] = success_all
-    return stats, trajs, renders
+    return stats_aggregated | {f"{k}_all": v for k, v in stats.items()}, trajs, renders
