@@ -95,13 +95,15 @@ def evaluate(
                 else:
                     render.append(frame)
 
+            info = info | {'goal': list(goal)}
+
             transition = dict(
                 observation=observation,
                 next_observation=next_observation,
                 action=action,
                 reward=reward,
                 done=done,
-                info=info | {'goal': goal},
+                info=info,
             )
             add_to(traj, transition)
             observation = next_observation
@@ -113,4 +115,4 @@ def evaluate(
 
     stats_aggregated = {k: np.mean(v) for k, v in stats.items()}
 
-    return stats_aggregated | {f"{k}_all": v for k, v in stats.items()}, trajs, renders
+    return stats_aggregated | {"success_all": stats["success"]}, trajs, renders
