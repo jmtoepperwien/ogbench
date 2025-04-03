@@ -101,7 +101,7 @@ def evaluate(
                 action=action,
                 reward=reward,
                 done=done,
-                info=info,
+                info=info | {'goal': goal},
             )
             add_to(traj, transition)
             observation = next_observation
