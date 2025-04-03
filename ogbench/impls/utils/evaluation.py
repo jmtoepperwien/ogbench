@@ -113,7 +113,7 @@ def evaluate(
 
     success_all = stats['success']
     for k, v in stats.items():
-        stats[k] = np.mean(v)
+        stats[f"{k}_mean"] = np.mean(v)
 
     stats['success_all'] = success_all
     return stats, trajs, renders
