@@ -604,6 +604,8 @@ class CubeEnv(ManipSpaceEnv):
                 [lie.SO3(wxyz=self._data.joint(f'object_joint_{i}').qpos[3:]).compute_yaw_radians()]
             )
 
+            ob_info[f'privileged/block_{i}_pos_goal'] = self._data.mocap_pos[self._cube_target_mocap_ids[i]]
+
         if self._mode == 'data_collection':
             # Target cube info.
             ob_info['privileged/target_task'] = self._target_task
