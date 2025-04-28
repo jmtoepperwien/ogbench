@@ -450,6 +450,8 @@ def make_maze_env(loco_env_type, maze_env_type, *args, **kwargs):
                         self.set_xy(np.array(teleport_out_xy))
                         break
 
+            info['xy_goal'] = self.cur_goal_xy
+
             if success:
                 if self._terminate_at_goal:
                     terminated = True
