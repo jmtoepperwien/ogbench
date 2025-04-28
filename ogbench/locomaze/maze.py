@@ -387,6 +387,7 @@ def make_maze_env(loco_env_type, maze_env_type, *args, **kwargs):
             self.set_xy(init_xy)
             ob = self.get_ob()
             info['goal'] = goal_ob
+            info['xy_goal'] = goal_xy
             if render_goal:
                 info['goal_rendered'] = goal_rendered
 
@@ -405,6 +406,8 @@ def make_maze_env(loco_env_type, maze_env_type, *args, **kwargs):
                         ]
                         self.set_xy(np.array(teleport_out_xy))
                         break
+
+            info['xy_goal'] = self.cur_goal_xy
 
             # Check if the agent has reached the goal.
             if np.linalg.norm(self.get_xy() - self.cur_goal_xy) <= self._goal_tol:
