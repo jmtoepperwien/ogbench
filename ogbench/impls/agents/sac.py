@@ -20,10 +20,10 @@ class SACAgent(flax.struct.PyTreeNode):
 
     def critic_loss(self, batch, grad_params, rng):
         """Compute the SAC critic loss."""
-        next_dist = self.network.select('actor')(batch['next_observations'])
+        next_dist = self.network.select('actor')(batch['next_observations'], batch['actor_goals'])
         next_actions, next_log_probs = next_dist.sample_and_log_prob(seed=rng)
 
-        next_qs = self.network.select('target_critic')(batch['next_observations'], next_actions)
+        next_qs = self.network.select('target_critic')(batch['next_observations'], batch['actor_goals'], next_actions)
         if self.config['min_q']:
             next_q = jnp.min(next_qs, axis=0)
         else:
@@ -32,7 +32,7 @@ class SACAgent(flax.struct.PyTreeNode):
         target_q = batch['rewards'] + self.config['discount'] * batch['masks'] * next_q
         target_q = target_q - self.config['discount'] * batch['masks'] * next_log_probs * self.network.select('alpha')()
 
-        q = self.network.select('critic')(batch['observations'], batch['actions'], params=grad_params)
+        q = self.network.select('critic')(batch['observations'], batch['actor_goals'], batch['actions'], params=grad_params)
         critic_loss = jnp.square(q - target_q).mean()
 
         return critic_loss, {
@@ -45,10 +45,10 @@ class SACAgent(flax.struct.PyTreeNode):
     def actor_loss(self, batch, grad_params, rng):
         """Compute the SAC actor loss."""
         # Actor loss.
-        dist = self.network.select('actor')(batch['observations'], params=grad_params)
+        dist = self.network.select('actor')(batch['observations'], batch['actor_goals'], params=grad_params)
         actions, log_probs = dist.sample_and_log_prob(seed=rng)
 
-        qs = self.network.select('critic')(batch['observations'], actions)
+        qs = self.network.select('critic')(batch['observations'], batch['actor_goals'], actions)
         if self.config['min_q']:
             q = jnp.min(qs, axis=0)
         else:
@@ -151,6 +151,10 @@ class SACAgent(flax.struct.PyTreeNode):
         rng = jax.random.PRNGKey(seed)
         rng, init_rng = jax.random.split(rng, 2)
 
+        # This may not work, but was defined like that in crl.py
+        # Is used later for the network and seems to fix dimension problems
+        ex_goals = ex_observations
+
         if isinstance(config, FrozenConfigDict):
             config = config.as_configdict()
 
@@ -180,9 +184,9 @@ class SACAgent(flax.struct.PyTreeNode):
         alpha_def = LogParam()
 
         network_info = dict(
-            critic=(critic_def, (ex_observations, None, ex_actions)),
+            critic=(critic_def, (ex_observations, ex_goals, ex_actions)),
             target_critic=(copy.deepcopy(critic_def), (ex_observations, None, ex_actions)),
-            actor=(actor_def, (ex_observations, None)),
+            actor=(actor_def, (ex_observations, ex_goals)),
             alpha=(alpha_def, ()),
         )
         networks = {k: v[0] for k, v in network_info.items()}
