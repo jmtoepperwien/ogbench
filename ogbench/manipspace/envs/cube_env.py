@@ -62,6 +62,10 @@ class CubeEnv(ManipSpaceEnv):
         # The target cube position is stored in the mocap object.
         self._target_block = 0
 
+        self._target_pos_cube = {}
+        self._pos_cube = {}
+        self._target_distance = {}
+
     def set_tasks(self):
         if self._env_type == 'single':
             self.task_infos = [
@@ -564,6 +568,9 @@ class CubeEnv(ManipSpaceEnv):
         for i in range(self._num_cubes):
             obj_pos = self._data.joint(f'object_joint_{i}').qpos[:3]
             tar_pos = self._data.mocap_pos[self._cube_target_mocap_ids[i]]
+            self._target_distance[i] = np.linalg.norm(obj_pos - tar_pos)
+            self._target_pos_cube[i] = tar_pos
+            self._pos_cube[i] = obj_pos
             if np.linalg.norm(obj_pos - tar_pos) <= 0.04:
                 cube_successes.append(True)
             else:
@@ -604,7 +611,10 @@ class CubeEnv(ManipSpaceEnv):
                 [lie.SO3(wxyz=self._data.joint(f'object_joint_{i}').qpos[3:]).compute_yaw_radians()]
             )
 
-            ob_info[f'privileged/block_{i}_pos_goal'] = self._data.mocap_pos[self._cube_target_mocap_ids[i]]
+            # Someone seems to be updating the positions in the background. They don't match the success calculatio in post_step(). Use information saved from there
+            ob_info[f'privileged/block_{i}_pos_goal'] = self._target_pos_cube[i] if i in self._target_pos_cube else None
+            ob_info[f'privileged/block_{i}_pos_copied'] = self._pos_cube[i] if i in self._pos_cube else None
+            ob_info[f'privileged/block_{i}_dist'] = self._target_distance[i] if i in self._target_distance else None
 
         if self._mode == 'data_collection':
             # Target cube info.
