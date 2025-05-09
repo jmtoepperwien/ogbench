@@ -348,6 +348,28 @@ class PowderworldEnv(gymnasium.Env):
             info['goal'] = goal
             if render_goal:
                 info['goal_rendered'] = goal_rendered
+            # Check if the current world matches the goal. To have some tolerance, for each pixel in the goal, we check
+            # if the current world has a matching pixel that is shifted by up to one pixel in any direction. We then
+            # compute the error as the number of pixels that do not match, and consider the task successful if the error
+            # is below a certain threshold.
+            cur_world = self._world[0, 0].copy()
+            world_shifts = []
+            for dx, dy in [(0, 0), (1, 0), (-1, 0), (0, 1), (0, -1)]:
+                world_shifts.append(np.roll(cur_world, (dy, dx), axis=(0, 1)))
+            world_shifts = np.stack(world_shifts, axis=0)
+            match = (self.cur_goal_world == world_shifts).any(axis=0)
+            error = ~match
+
+            info["error"] = error.sum()
+            success = error.sum() < self.cur_task_info['tol']
+            if success:
+                terminated = True
+                info['success'] = 1.0
+                reward = 1.0
+            else:
+                info['success'] = 0.0
+                reward = 0.0
+
 
         return ob, info
 
@@ -415,6 +437,7 @@ class PowderworldEnv(gymnasium.Env):
             match = (self.cur_goal_world == world_shifts).any(axis=0)
             error = ~match
 
+            info["error"] = error.sum()
             success = error.sum() < self.cur_task_info['tol']
             if success:
                 terminated = True
