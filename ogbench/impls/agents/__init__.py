@@ -5,6 +5,7 @@ from ogbench.impls.agents.gcivl import GCIVLAgent
 from ogbench.impls.agents.hiql import HIQLAgent
 from ogbench.impls.agents.qrl import QRLAgent
 from ogbench.impls.agents.sac import SACAgent
+from ogbench.impls.agents.cmd import CMDAgent
 
 agents = dict(
     crl=CRLAgent,
@@ -14,4 +15,5 @@ agents = dict(
     hiql=HIQLAgent,
     qrl=QRLAgent,
     sac=SACAgent,
+    cmd=CMDAgent,
 )
