@@ -44,38 +44,109 @@ class SACAgent(flax.struct.PyTreeNode):
 
     def actor_loss(self, batch, grad_params, rng):
         """Compute the SAC actor loss."""
-        # Actor loss.
-        dist = self.network.select('actor')(batch['observations'], batch['actor_goals'], params=grad_params)
-        actions, log_probs = dist.sample_and_log_prob(seed=rng)
+        if self.config['actor_loss'] == 'original':
+            # Actor loss.
+            dist = self.network.select('actor')(batch['observations'], batch['actor_goals'], params=grad_params)
+            actions, log_probs = dist.sample_and_log_prob(seed=rng)
 
-        qs = self.network.select('critic')(batch['observations'], batch['actor_goals'], actions=actions)
-        if self.config['min_q']:
-            q = jnp.min(qs, axis=0)
+            qs = self.network.select('critic')(batch['observations'], batch['actor_goals'], actions=actions)
+            if self.config['min_q']:
+                q = jnp.min(qs, axis=0)
+            else:
+                q = jnp.mean(qs, axis=0)
+
+            actor_loss = (log_probs * self.network.select('alpha')() - q).mean()
+
+            # Entropy loss.
+            alpha = self.network.select('alpha')(params=grad_params)
+            entropy = -jax.lax.stop_gradient(log_probs).mean()
+            alpha_loss = (alpha * (entropy - self.config['target_entropy'])).mean()
+
+            total_loss = actor_loss + alpha_loss
+
+            if self.config['tanh_squash']:
+                action_std = dist._distribution.stddev()
+            else:
+                action_std = dist.stddev().mean()
+
+            return total_loss, {
+                'total_loss': total_loss,
+                'actor_loss': actor_loss,
+                'alpha_loss': alpha_loss,
+                'alpha': alpha,
+                'entropy': -log_probs.mean(),
+                'std': action_std.mean(),
+            }
+        elif self.config['actor_loss'] == 'originalbc':
+            # Actor loss.
+            dist = self.network.select('actor')(batch['observations'], batch['actor_goals'], params=grad_params)
+            actions, log_probs = dist.sample_and_log_prob(seed=rng)
+
+            qs = self.network.select('critic')(batch['observations'], batch['actor_goals'], actions=actions)
+            if self.config['min_q']:
+                q = jnp.min(qs, axis=0)
+            else:
+                q = jnp.mean(qs, axis=0)
+
+            actor_loss = (log_probs * self.network.select('alpha')() - q).mean()
+
+            # Entropy loss.
+            alpha = self.network.select('alpha')(params=grad_params)
+            entropy = -jax.lax.stop_gradient(log_probs).mean()
+            alpha_loss = (alpha * (entropy - self.config['target_entropy'])).mean()
+
+
+            log_prob = dist.log_prob(batch['actions'])
+            bc_loss = -(self.config['alpha'] * log_prob).mean()
+
+            total_loss = actor_loss + alpha_loss + bc_loss
+
+            if self.config['tanh_squash']:
+                action_std = dist._distribution.stddev()
+            else:
+                action_std = dist.stddev().mean()
+
+            return total_loss, {
+                'total_loss': total_loss,
+                'actor_loss': actor_loss,
+                'alpha_loss': alpha_loss,
+                'bc_loss': bc_loss,
+                'alpha': alpha,
+                'entropy': -log_probs.mean(),
+                'std': action_std.mean(),
+            }
+
+        elif self.config['actor_loss'] == 'ddpgbc':
+            # DDPG+BC loss.
+            assert not self.config['discrete']
+
+            dist = self.network.select('actor')(batch['observations'], batch['actor_goals'], params=grad_params)
+            actions, log_probs = dist.sample_and_log_prob(seed=rng)
+            q_actions = jnp.clip(dist.sample(seed=rng), -1, 1)
+            qs = self.network.select('critic')(batch['observations'], batch['actor_goals'], actions=q_actions)
+            if self.config['min_q']:
+                q = jnp.min(qs, axis=0)
+            else:
+                q = jnp.mean(qs, axis=0)
+            # Normalize Q values by the absolute mean to make the loss scale invariant.
+            q_loss = -q.mean() / jax.lax.stop_gradient(jnp.abs(q).mean() + 1e-6)
+            log_prob = dist.log_prob(batch['actions'])
+
+            bc_loss = -(self.config['alpha'] * log_prob).mean()
+
+            actor_loss = q_loss + bc_loss
+
+            return actor_loss, {
+                'actor_loss': actor_loss,
+                'q_loss': q_loss,
+                'bc_loss': bc_loss,
+                'q_mean': q.mean(),
+                'q_abs_mean': jnp.abs(q).mean(),
+                'bc_log_prob': log_prob.mean(),
+                'mse': jnp.mean((dist.mode() - batch['actions']) ** 2),
+            }
         else:
-            q = jnp.mean(qs, axis=0)
-
-        actor_loss = (log_probs * self.network.select('alpha')() - q).mean()
-
-        # Entropy loss.
-        alpha = self.network.select('alpha')(params=grad_params)
-        entropy = -jax.lax.stop_gradient(log_probs).mean()
-        alpha_loss = (alpha * (entropy - self.config['target_entropy'])).mean()
-
-        total_loss = actor_loss + alpha_loss
-
-        if self.config['tanh_squash']:
-            action_std = dist._distribution.stddev()
-        else:
-            action_std = dist.stddev().mean()
-
-        return total_loss, {
-            'total_loss': total_loss,
-            'actor_loss': actor_loss,
-            'alpha_loss': alpha_loss,
-            'alpha': alpha,
-            'entropy': -log_probs.mean(),
-            'std': action_std.mean(),
-        }
+            raise ValueError(f'Unsupported actor loss: {self.config["actor_loss"]}')
 
     @jax.jit
     def total_loss(self, batch, grad_params, rng=None):
@@ -168,14 +239,12 @@ class SACAgent(flax.struct.PyTreeNode):
             ensemble=True,
         )
 
+
         actor_def = GCActor(
             hidden_dims=config['actor_hidden_dims'],
             action_dim=action_dim,
-            log_std_min=-5,
-            tanh_squash=config['tanh_squash'],
-            state_dependent_std=config['state_dependent_std'],
-            const_std=False,
-            final_fc_init_scale=config['actor_fc_scale'],
+            state_dependent_std=False,
+            const_std=config['const_std'],
         )
 
         # Define the dual alpha variable.
@@ -207,8 +276,8 @@ def get_config():
             agent_name='sac',  # Agent name.
             lr=1e-4,  # Learning rate.
             batch_size=256,  # Batch size.
-            actor_hidden_dims=(256, 256),  # Actor network hidden dimensions.
-            value_hidden_dims=(256, 256),  # Value network hidden dimensions.
+            actor_hidden_dims=(512, 512, 512),  # Actor network hidden dimensions.
+            value_hidden_dims=(512, 512, 512),  # Value network hidden dimensions.
             layer_norm=False,  # Whether to use layer normalization.
             discount=0.99,  # Discount factor.
             tau=0.005,  # Target network update rate.
@@ -218,6 +287,9 @@ def get_config():
             state_dependent_std=True,  # Whether to use state-dependent standard deviations for actor.
             actor_fc_scale=0.01,  # Final layer initialization scale for actor.
             min_q=True,  # Whether to use min Q (True) or mean Q (False).
+            const_std=True,
+            actor_loss='ddpgbc',
+            alpha=0.3,
             discrete=False,  # Whether the action space is discrete.
             encoder=ml_collections.config_dict.placeholder(str),  # Visual encoder name (None, 'impala_small', etc.).
             dataset_class='GCDataset',  # Dataset class name.
