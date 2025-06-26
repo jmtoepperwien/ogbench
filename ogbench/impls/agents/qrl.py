@@ -300,7 +300,7 @@ def get_config():
             batch_size=1024,  # Batch size.
             actor_hidden_dims=(512, 512, 512),  # Actor network hidden dimensions.
             value_hidden_dims=(512, 512, 512),  # Value network hidden dimensions.
-            quasimetric_type='iqe',  # Quasimetric parameterization type ('iqe' or 'mrn').
+            quasimetric_type='mrn',  # Quasimetric parameterization type ('iqe' or 'mrn').
             latent_dim=512,  # Latent dimension for the quasimetric value function.
             layer_norm=True,  # Whether to use layer normalization.
             discount=0.99,  # Discount factor (unused by default; can be used for geometric goal sampling in GCDataset).
