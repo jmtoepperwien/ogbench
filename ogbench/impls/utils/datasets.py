@@ -242,6 +242,7 @@ class GCDataset:
         successes = (idxs == value_goal_idxs).astype(float)
         batch['masks'] = 1.0 - successes
         batch['rewards'] = successes - (1.0 if self.config['gc_negative'] else 0.0)
+        batch['trajectory_final_state_idx'] = self.terminal_locs[np.searchsorted(self.terminal_locs, idxs)]
 
         if self.config['p_aug'] is not None and not evaluation:
             if np.random.rand() < self.config['p_aug']:
