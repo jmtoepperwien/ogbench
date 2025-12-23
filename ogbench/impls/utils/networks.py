@@ -60,6 +60,41 @@ class MLP(nn.Module):
         return x
 
 
+class MLPWithEmbedding(nn.Module):
+    """Multi-layer perceptron.
+
+    Attributes:
+        hidden_dims: Hidden layer dimensions.
+        activations: Activation function.
+        activate_final: Whether to apply activation to the final layer.
+        kernel_init: Kernel initializer.
+        layer_norm: Whether to apply layer normalization.
+    """
+
+    hidden_dims: Sequence[int]
+    activations: Any = nn.gelu
+    activate_final: bool = False
+    kernel_init: Any = default_init()
+    layer_norm: bool = False
+
+    @nn.compact
+    def __call__(self, x):
+        for i, size in enumerate(self.hidden_dims[:-1]):
+            x = nn.Dense(size, kernel_init=self.kernel_init)(x)
+            if i + 1 < len(self.hidden_dims) or self.activate_final:
+                x = self.activations(x)
+                if self.layer_norm:
+                    x = nn.LayerNorm()(x)
+        embedding = x
+        x = nn.Dense(self.hidden_dims[-1], kernel_init=self.kernel_init)(x)
+        if self.activate_final:
+            x = self.activations(x)
+            if self.layer_norm:
+                x = nn.LayerNorm()(x)
+        return x, embedding
+
+
+
 class LengthNormalize(nn.Module):
     """Length normalization layer.
 
@@ -286,20 +321,21 @@ class GCValue(nn.Module):
     gc_encoder: nn.Module = None
 
     def setup(self):
-        mlp_module = MLP
+        mlp_module = MLPWithEmbedding
         if self.ensemble:
             mlp_module = ensemblize(mlp_module, 2)
         value_net = mlp_module((*self.hidden_dims, 1), activate_final=False, layer_norm=self.layer_norm)
 
         self.value_net = value_net
 
-    def __call__(self, observations, goals=None, actions=None):
+    def __call__(self, observations, goals=None, actions=None, info=None):
         """Return the value/critic function.
 
         Args:
             observations: Observations.
             goals: Goals (optional).
             actions: Actions (optional).
+            info: Whether to additionally return feature embeddings from last hidden layer.
         """
         if self.gc_encoder is not None:
             inputs = [self.gc_encoder(observations, goals)]
@@ -311,10 +347,14 @@ class GCValue(nn.Module):
             inputs.append(actions)
         inputs = jnp.concatenate(inputs, axis=-1)
 
-        v = self.value_net(inputs).squeeze(-1)
+        v_unsqueezed, embedding = self.value_net(inputs)
+        v = v_unsqueezed.squeeze(-1)
 
         if self.value_exp:
             v = jnp.exp(v)
+
+        if info:
+            return v, embedding
 
         return v
 
