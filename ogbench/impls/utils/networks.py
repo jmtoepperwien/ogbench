@@ -289,21 +289,17 @@ class GCValue(nn.Module):
         mlp_module = MLP
         if self.ensemble:
             mlp_module = ensemblize(mlp_module, 2)
-        # Split into feature network (hidden layers) and value head (final layer)
-        feature_net = mlp_module(self.hidden_dims, activate_final=True, layer_norm=self.layer_norm)
-        value_head = mlp_module((1,), activate_final=False, layer_norm=False)
+        value_net = mlp_module((*self.hidden_dims, 1), activate_final=False, layer_norm=self.layer_norm)
 
-        self.feature_net = feature_net
-        self.value_head = value_head
+        self.value_net = value_net
 
-    def __call__(self, observations, goals=None, actions=None, info=False):
+    def __call__(self, observations, goals=None, actions=None):
         """Return the value/critic function.
 
         Args:
             observations: Observations.
             goals: Goals (optional).
             actions: Actions (optional).
-            info: Whether to additionally return feature embeddings from last hidden layer.
         """
         if self.gc_encoder is not None:
             inputs = [self.gc_encoder(observations, goals)]
@@ -315,22 +311,12 @@ class GCValue(nn.Module):
             inputs.append(actions)
         inputs = jnp.concatenate(inputs, axis=-1)
 
-        # Extract features from last hidden layer
-        features = self.feature_net(inputs).squeeze()
-        v = self.value_head(features)
-        if self.ensemble:
-            # feature i corresponds to value head i
-            # We only calculate it separately to be able to read out the feature embeddings
-            v = v[[0, 1], [0, 1], :]
+        v = self.value_net(inputs).squeeze(-1)
 
         if self.value_exp:
             v = jnp.exp(v)
 
-        if info:
-            # Return value and joint feature embeddings
-            return v, features
-        else:
-            return v
+        return v
 
 
 class GCDiscreteCritic(GCValue):
