@@ -64,6 +64,8 @@ class HIQLAgent(flax.struct.PyTreeNode):
         v = (v1 + v2) / 2
         nv = (nv1 + nv2) / 2
         adv = nv - v
+        if self.config['normalize_advantages']:
+            adv = (adv - adv.mean()) / (adv.std() + 1e-8)
 
         exp_a = jnp.exp(adv * self.config['low_alpha'])
         exp_a = jnp.minimum(exp_a, 100.0)
@@ -103,6 +105,8 @@ class HIQLAgent(flax.struct.PyTreeNode):
         v = (v1 + v2) / 2
         nv = (nv1 + nv2) / 2
         adv = nv - v
+        if self.config['normalize_advantages']:
+            adv = (adv - adv.mean()) / (adv.std() + 1e-8)
 
         exp_a = jnp.exp(adv * self.config['high_alpha'])
         exp_a = jnp.minimum(exp_a, 100.0)
@@ -331,6 +335,7 @@ def get_config():
             expectile=0.7,  # IQL expectile.
             low_alpha=3.0,  # Low-level AWR temperature.
             high_alpha=3.0,  # High-level AWR temperature.
+            normalize_advantages=False,  # Whether to normalize advantages before AWR weighting.
             subgoal_steps=25,  # Subgoal steps.
             rep_dim=10,  # Goal representation dimension.
             low_actor_rep_grad=False,  # Whether low-actor gradients flow to goal representation (use True for pixels).

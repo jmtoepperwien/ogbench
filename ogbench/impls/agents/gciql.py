@@ -66,6 +66,8 @@ class GCIQLAgent(flax.struct.PyTreeNode):
             q1, q2 = self.network.select('critic')(batch['observations'], batch['actor_goals'], batch['actions'])
             q = jnp.minimum(q1, q2)
             adv = q - v
+            if self.config['normalize_advantages']:
+                adv = (adv - adv.mean()) / (adv.std() + 1e-8)
 
             exp_a = jnp.exp(adv * self.config['alpha'])
             exp_a = jnp.minimum(exp_a, 100.0)
@@ -288,6 +290,7 @@ def get_config():
             expectile=0.9,  # IQL expectile.
             actor_loss='ddpgbc',  # Actor loss type ('awr' or 'ddpgbc').
             alpha=0.3,  # Temperature in AWR or BC coefficient in DDPG+BC.
+            normalize_advantages=False,  # Whether to normalize advantages before AWR weighting.
             const_std=True,  # Whether to use constant standard deviation for the actor.
             discrete=False,  # Whether the action space is discrete.
             encoder=ml_collections.config_dict.placeholder(str),  # Visual encoder name (None, 'impala_small', etc.).

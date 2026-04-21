@@ -82,6 +82,8 @@ class QRLAgent(flax.struct.PyTreeNode):
             v = -self.network.select('value')(batch['observations'], batch['actor_goals'])
             nv = -self.network.select('value')(batch['next_observations'], batch['actor_goals'])
             adv = nv - v
+            if self.config['normalize_advantages']:
+                adv = (adv - adv.mean()) / (adv.std() + 1e-8)
 
             exp_a = jnp.exp(adv * self.config['alpha'])
             exp_a = jnp.minimum(exp_a, 100.0)
@@ -307,6 +309,7 @@ def get_config():
             eps=0.05,  # Margin for the dual lambda loss.
             actor_loss='ddpgbc',  # Actor loss type ('awr' or 'ddpgbc').
             alpha=0.003,  # Temperature in AWR or BC coefficient in DDPG+BC.
+            normalize_advantages=False,  # Whether to normalize advantages before AWR weighting.
             const_std=True,  # Whether to use constant standard deviation for the actor.
             discrete=False,  # Whether the action space is discrete.
             encoder=ml_collections.config_dict.placeholder(str),  # Visual encoder name (None, 'impala_small', etc.).

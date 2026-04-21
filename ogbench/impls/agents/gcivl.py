@@ -67,6 +67,8 @@ class GCIVLAgent(flax.struct.PyTreeNode):
         v = (v1 + v2) / 2
         nv = (nv1 + nv2) / 2
         adv = nv - v
+        if self.config['normalize_advantages']:
+            adv = (adv - adv.mean()) / (adv.std() + 1e-8)
 
         exp_a = jnp.exp(adv * self.config['alpha'])
         exp_a = jnp.minimum(exp_a, 100.0)
@@ -234,6 +236,7 @@ def get_config():
             tau=0.005,  # Target network update rate.
             expectile=0.9,  # IQL expectile.
             alpha=10.0,  # AWR temperature.
+            normalize_advantages=False,  # Whether to normalize advantages before AWR weighting.
             const_std=True,  # Whether to use constant standard deviation for the actor.
             discrete=False,  # Whether the action space is discrete.
             encoder=ml_collections.config_dict.placeholder(str),  # Visual encoder name (None, 'impala_small', etc.).
