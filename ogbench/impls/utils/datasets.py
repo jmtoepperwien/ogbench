@@ -202,7 +202,7 @@ class GCDataset:
                 stacked_observations = self.get_stacked_observations(np.arange(self.size))
                 self.dataset = Dataset(self.dataset.copy(dict(observations=stacked_observations)))
 
-    def sample(self, batch_size, idxs=None, evaluation=False):
+    def sample(self, batch_size, idxs=None, evaluation=False, seed=None):
         """Sample a batch of transitions with goals.
 
         This method samples a batch of transitions with goals (value_goals and actor_goals) from the dataset. They are
@@ -213,9 +213,20 @@ class GCDataset:
             batch_size: Batch size.
             idxs: Indices of the transitions to sample. If None, random indices are sampled.
             evaluation: Whether to sample for evaluation. If True, image augmentation is not applied.
+            seed: If provided, a fresh numpy Generator seeded with this value is used for all random
+                operations (index sampling, goal relabeling, augmentation). The global numpy random
+                state is never touched, making the batch fully deterministic.
         """
+        rng = np.random.default_rng(seed) if seed is not None else None
+
         if idxs is None:
-            idxs = self.dataset.get_random_idxs(batch_size)
+            if rng is not None:
+                if 'valids' in self.dataset._dict:
+                    idxs = self.dataset.valid_idxs[rng.integers(len(self.dataset.valid_idxs), size=batch_size)]
+                else:
+                    idxs = rng.integers(self.dataset.size, size=batch_size)
+            else:
+                idxs = self.dataset.get_random_idxs(batch_size)
 
         batch = self.dataset.sample(batch_size, idxs)
         if self.config['frame_stack'] is not None:
@@ -228,6 +239,7 @@ class GCDataset:
             self.config['value_p_trajgoal'],
             self.config['value_p_randomgoal'],
             self.config['value_geom_sample'],
+            rng=rng,
         )
         actor_goal_idxs = self.sample_goals(
             idxs,
@@ -235,6 +247,7 @@ class GCDataset:
             self.config['actor_p_trajgoal'],
             self.config['actor_p_randomgoal'],
             self.config['actor_geom_sample'],
+            rng=rng,
         )
 
         batch['value_goals'] = self.get_observations(value_goal_idxs)
@@ -245,39 +258,49 @@ class GCDataset:
         batch['trajectory_final_state_idx'] = self.terminal_locs[np.searchsorted(self.terminal_locs, idxs)]
 
         if self.config['p_aug'] is not None and not evaluation:
-            if np.random.rand() < self.config['p_aug']:
+            rand_val = rng.random() if rng is not None else np.random.rand()
+            if rand_val < self.config['p_aug']:
                 self.augment(batch, ['observations', 'next_observations', 'value_goals', 'actor_goals'])
 
         return batch
 
-    def sample_goals(self, idxs, p_curgoal, p_trajgoal, p_randomgoal, geom_sample):
+    def sample_goals(self, idxs, p_curgoal, p_trajgoal, p_randomgoal, geom_sample, rng=None):
         """Sample goals for the given indices."""
         batch_size = len(idxs)
 
         # Random goals.
-        random_goal_idxs = self.dataset.get_random_idxs(batch_size)
+        if rng is not None:
+            if 'valids' in self.dataset._dict:
+                random_goal_idxs = self.dataset.valid_idxs[rng.integers(len(self.dataset.valid_idxs), size=batch_size)]
+            else:
+                random_goal_idxs = rng.integers(self.dataset.size, size=batch_size)
+        else:
+            random_goal_idxs = self.dataset.get_random_idxs(batch_size)
 
         # Goals from the same trajectory (excluding the current state, unless it is the final state).
         final_state_idxs = self.terminal_locs[np.searchsorted(self.terminal_locs, idxs)]
         if geom_sample:
             # Geometric sampling.
-            offsets = np.random.geometric(p=1 - self.config['discount'], size=batch_size)  # in [1, inf)
+            offsets = (rng.geometric if rng is not None else np.random.geometric)(
+                p=1 - self.config['discount'], size=batch_size
+            )  # in [1, inf)
             traj_goal_idxs = np.minimum(idxs + offsets, final_state_idxs)
         else:
             # Uniform sampling.
-            distances = np.random.rand(batch_size)  # in [0, 1)
+            distances = (rng.random if rng is not None else np.random.rand)(batch_size)  # in [0, 1)
             traj_goal_idxs = np.round(
                 (np.minimum(idxs + 1, final_state_idxs) * distances + final_state_idxs * (1 - distances))
             ).astype(int)
         if p_curgoal == 1.0:
             goal_idxs = idxs
         else:
+            rand_fn = rng.random if rng is not None else np.random.rand
             goal_idxs = np.where(
-                np.random.rand(batch_size) < p_trajgoal / (1.0 - p_curgoal), traj_goal_idxs, random_goal_idxs
+                rand_fn(batch_size) < p_trajgoal / (1.0 - p_curgoal), traj_goal_idxs, random_goal_idxs
             )
 
             # Goals at the current state.
-            goal_idxs = np.where(np.random.rand(batch_size) < p_curgoal, idxs, goal_idxs)
+            goal_idxs = np.where(rand_fn(batch_size) < p_curgoal, idxs, goal_idxs)
 
         return goal_idxs
 
@@ -319,7 +342,7 @@ class HGCDataset(GCDataset):
     - subgoal_steps: Subgoal steps (i.e., the number of steps to reach the low-level goal).
     """
 
-    def sample(self, batch_size, idxs=None, evaluation=False):
+    def sample(self, batch_size, idxs=None, evaluation=False, seed=None):
         """Sample a batch of transitions with goals.
 
         This method samples a batch of transitions with goals from the dataset. The goals are stored in the keys
@@ -330,9 +353,19 @@ class HGCDataset(GCDataset):
             batch_size: Batch size.
             idxs: Indices of the transitions to sample. If None, random indices are sampled.
             evaluation: Whether to sample for evaluation. If True, image augmentation is not applied.
+            seed: If provided, a fresh numpy Generator seeded with this value is used for all random
+                operations. The global numpy random state is never touched.
         """
+        rng = np.random.default_rng(seed) if seed is not None else None
+
         if idxs is None:
-            idxs = self.dataset.get_random_idxs(batch_size)
+            if rng is not None:
+                if 'valids' in self.dataset._dict:
+                    idxs = self.dataset.valid_idxs[rng.integers(len(self.dataset.valid_idxs), size=batch_size)]
+                else:
+                    idxs = rng.integers(self.dataset.size, size=batch_size)
+            else:
+                idxs = self.dataset.get_random_idxs(batch_size)
 
         batch = self.dataset.sample(batch_size, idxs)
         batch['trajectory_final_state_idx'] = self.terminal_locs[np.searchsorted(self.terminal_locs, idxs)]
@@ -347,6 +380,7 @@ class HGCDataset(GCDataset):
             self.config['value_p_trajgoal'],
             self.config['value_p_randomgoal'],
             self.config['value_geom_sample'],
+            rng=rng,
         )
         batch['value_goals'] = self.get_observations(value_goal_idxs)
 
@@ -360,25 +394,34 @@ class HGCDataset(GCDataset):
         batch['low_actor_goals'] = self.get_observations(low_goal_idxs)
 
         # Sample high-level actor goals and set prediction targets.
+        rand_fn = rng.random if rng is not None else np.random.rand
         # High-level future goals.
         if self.config['actor_geom_sample']:
             # Geometric sampling.
-            offsets = np.random.geometric(p=1 - self.config['discount'], size=batch_size)  # in [1, inf)
+            offsets = (rng.geometric if rng is not None else np.random.geometric)(
+                p=1 - self.config['discount'], size=batch_size
+            )  # in [1, inf)
             high_traj_goal_idxs = np.minimum(idxs + offsets, final_state_idxs)
         else:
             # Uniform sampling.
-            distances = np.random.rand(batch_size)  # in [0, 1)
+            distances = rand_fn(batch_size)  # in [0, 1)
             high_traj_goal_idxs = np.round(
                 (np.minimum(idxs + 1, final_state_idxs) * distances + final_state_idxs * (1 - distances))
             ).astype(int)
         high_traj_target_idxs = np.minimum(idxs + self.config['subgoal_steps'], high_traj_goal_idxs)
 
         # High-level random goals.
-        high_random_goal_idxs = self.dataset.get_random_idxs(batch_size)
+        if rng is not None:
+            if 'valids' in self.dataset._dict:
+                high_random_goal_idxs = self.dataset.valid_idxs[rng.integers(len(self.dataset.valid_idxs), size=batch_size)]
+            else:
+                high_random_goal_idxs = rng.integers(self.dataset.size, size=batch_size)
+        else:
+            high_random_goal_idxs = self.dataset.get_random_idxs(batch_size)
         high_random_target_idxs = np.minimum(idxs + self.config['subgoal_steps'], final_state_idxs)
 
         # Pick between high-level future goals and random goals.
-        pick_random = np.random.rand(batch_size) < self.config['actor_p_randomgoal']
+        pick_random = rand_fn(batch_size) < self.config['actor_p_randomgoal']
         high_goal_idxs = np.where(pick_random, high_random_goal_idxs, high_traj_goal_idxs)
         high_target_idxs = np.where(pick_random, high_random_target_idxs, high_traj_target_idxs)
 
@@ -386,7 +429,7 @@ class HGCDataset(GCDataset):
         batch['high_actor_targets'] = self.get_observations(high_target_idxs)
 
         if self.config['p_aug'] is not None and not evaluation:
-            if np.random.rand() < self.config['p_aug']:
+            if rand_fn() < self.config['p_aug']:
                 self.augment(
                     batch,
                     [
