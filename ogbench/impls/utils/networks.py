@@ -622,8 +622,8 @@ class DiscreteStateActionRepresentation(StateRepresentation):
     action_dim: int = None
 
     def __call__(self, observations, actions=None, info=False):
-        if self.encoder is not None:
-            observations = self.encoder(observations)
+        if self.state_encoder is not None:
+            observations = self.state_encoder(observations)
 
         if actions is not None:
             actions = jnp.eye(self.action_dim)[actions]

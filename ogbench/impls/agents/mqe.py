@@ -236,10 +236,6 @@ class MQEAgent(flax.struct.PyTreeNode):
         else:
             action_dim = ex_actions.shape[-1]
 
-        config['gamma'] = config['discount']
-
-        # Define encoders.
-        encoders = dict()
         if config['encoder'] is not None:
             encoder_module = encoder_modules[config['encoder']]
             if not config['use_latent']:
@@ -322,6 +318,7 @@ def get_config():
             latent_dim=512,  # Latent dimension for actors/encoders.
             layer_norm=True,  # Whether to use layer normalization for networks.
             encoder=ml_collections.config_dict.placeholder(str),  # Visual encoder name (None, 'impala_small', etc.).
+            use_latent=False,  # Whether to encode observations to latent space before passing to networks.
             actor_log_q=True,  # Whether to maximize log Q (True) or Q itself (False) in the actor loss.
             const_std=True,  # Whether to use constant standard deviation for the actor.
             discrete=False,  # Whether the action space is discrete.

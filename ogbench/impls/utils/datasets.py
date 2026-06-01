@@ -233,13 +233,14 @@ class GCDataset:
             batch['observations'] = self.get_observations(idxs)
             batch['next_observations'] = self.get_observations(idxs + 1)
 
-        value_goal_idxs = self.sample_goals(
+        value_goal_idxs, value_goal_offsets = self.sample_goals(
             idxs,
             self.config['value_p_curgoal'],
             self.config['value_p_trajgoal'],
             self.config['value_p_randomgoal'],
             self.config['value_geom_sample'],
             rng=rng,
+            return_offset=True,
         )
         actor_goal_idxs = self.sample_goals(
             idxs,
@@ -250,8 +251,28 @@ class GCDataset:
             rng=rng,
         )
 
+        # Sample intermediate value goals (used by MQE's critic_loss).
+        lambda_ = self.config.get('lambda_', 0.0)
+        intermediate_geom_sample = self.config.get('intermediate_value_geom_sample', True)
+        intermediate_value_goal_idxs, intermediate_value_goal_offsets = self.sample_goals(
+            idxs,
+            self.config['value_p_curgoal'],
+            self.config['value_p_trajgoal'],
+            self.config['value_p_randomgoal'],
+            intermediate_geom_sample,
+            rng=rng,
+            discount=lambda_,
+            return_offset=True,
+        )
+        # Clip intermediate goals to be <= value goals (trajectory ordering).
+        intermediate_value_goal_idxs = np.minimum(intermediate_value_goal_idxs, value_goal_idxs)
+        intermediate_value_goal_offsets = np.minimum(intermediate_value_goal_offsets, value_goal_offsets)
+
         batch['value_goals'] = self.get_observations(value_goal_idxs)
+        batch['value_goals_offsets'] = value_goal_offsets  # used by MQE critic_loss
         batch['actor_goals'] = self.get_observations(actor_goal_idxs)
+        batch['intermediate_value_goals'] = self.get_observations(intermediate_value_goal_idxs)
+        batch['intermediate_value_goals_offsets'] = intermediate_value_goal_offsets
         successes = (idxs == value_goal_idxs).astype(float)
         batch['masks'] = 1.0 - successes
         batch['rewards'] = successes - (1.0 if self.config['gc_negative'] else 0.0)
@@ -264,9 +285,26 @@ class GCDataset:
 
         return batch
 
-    def sample_goals(self, idxs, p_curgoal, p_trajgoal, p_randomgoal, geom_sample, rng=None):
-        """Sample goals for the given indices."""
+    def sample_goals(self, idxs, p_curgoal, p_trajgoal, p_randomgoal, geom_sample, rng=None, discount=None, return_offset=False):
+        """Sample goals for the given indices.
+
+        Args:
+            idxs: Indices of the current states.
+            p_curgoal: Probability of using the current state as the goal.
+            p_trajgoal: Probability of using a future state in the same trajectory as the goal.
+            p_randomgoal: Probability of using a random state as the goal.
+            geom_sample: Whether to use geometric sampling for future goals.
+            rng: Optional numpy random Generator for reproducibility.
+            discount: Discount factor for geometric sampling. Defaults to self.config['discount'].
+            return_offset: If True, additionally returns an integer array of offsets (number of steps from
+                each idx to its sampled goal).
+
+        Returns:
+            goal_idxs: Indices of the sampled goals.
+            offsets: (only if return_offset=True) Integer array of offsets.
+        """
         batch_size = len(idxs)
+        discount = self.config['discount'] if discount is None else discount
 
         # Random goals.
         if rng is not None:
@@ -282,26 +320,35 @@ class GCDataset:
         if geom_sample:
             # Geometric sampling.
             offsets = (rng.geometric if rng is not None else np.random.geometric)(
-                p=1 - self.config['discount'], size=batch_size
+                p=1 - discount, size=batch_size
             )  # in [1, inf)
             traj_goal_idxs = np.minimum(idxs + offsets, final_state_idxs)
+            # Clamp offsets to trajectory length (offsets=0 when idx == final_state_idx).
+            offsets = np.minimum(offsets, final_state_idxs - idxs)
         else:
             # Uniform sampling.
             distances = (rng.random if rng is not None else np.random.rand)(batch_size)  # in [0, 1)
             traj_goal_idxs = np.round(
                 (np.minimum(idxs + 1, final_state_idxs) * distances + final_state_idxs * (1 - distances))
             ).astype(int)
+            offsets = traj_goal_idxs - idxs
+
         if p_curgoal == 1.0:
             goal_idxs = idxs
+            offsets = np.zeros(batch_size, dtype=int)
         else:
             rand_fn = rng.random if rng is not None else np.random.rand
             goal_idxs = np.where(
                 rand_fn(batch_size) < p_trajgoal / (1.0 - p_curgoal), traj_goal_idxs, random_goal_idxs
             )
-
             # Goals at the current state.
-            goal_idxs = np.where(rand_fn(batch_size) < p_curgoal, idxs, goal_idxs)
+            is_curgoal = rand_fn(batch_size) < p_curgoal
+            goal_idxs = np.where(is_curgoal, idxs, goal_idxs)
+            # Offsets: 0 for current goals, keep traj/random offsets as computed.
+            offsets = np.where(is_curgoal, 0, offsets)
 
+        if return_offset:
+            return goal_idxs, offsets
         return goal_idxs
 
     def augment(self, batch, keys):
