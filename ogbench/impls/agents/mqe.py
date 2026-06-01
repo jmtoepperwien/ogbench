@@ -8,9 +8,9 @@ import ml_collections
 import optax
 import copy
 
-from utils.encoders import GCEncoder, encoder_modules
-from utils.flax_utils import ModuleDict, TrainState, nonpytree_field
-from utils.networks import (
+from ogbench.impls.utils.encoders import GCEncoder, encoder_modules
+from ogbench.impls.utils.flax_utils import ModuleDict, TrainState, nonpytree_field
+from ogbench.impls.utils.networks import (
     DiscreteStateActionRepresentation,
     GCActor,
     GCDiscreteActor,
