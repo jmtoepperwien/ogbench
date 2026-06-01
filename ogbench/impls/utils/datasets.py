@@ -274,8 +274,6 @@ class GCDataset:
         batch['value_goals'] = self.get_observations(value_goal_idxs)
         batch['value_goals_offsets'] = value_goal_offsets  # used by MQE critic_loss
         batch['actor_goals'] = self.get_observations(actor_goal_idxs)
-        batch['intermediate_value_goals'] = self.get_observations(intermediate_value_goal_idxs)
-        batch['intermediate_value_goals_offsets'] = intermediate_value_goal_offsets
         successes = (idxs == value_goal_idxs).astype(float)
         batch['masks'] = 1.0 - successes
         batch['rewards'] = successes - (1.0 if self.config['gc_negative'] else 0.0)

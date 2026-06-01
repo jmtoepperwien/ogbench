@@ -1,12 +1,10 @@
 from typing import Any
-from functools import partial
 
 import flax
 import jax
 import jax.numpy as jnp
 import ml_collections
 import optax
-import copy
 
 from ogbench.impls.utils.encoders import GCEncoder, encoder_modules
 from ogbench.impls.utils.flax_utils import ModuleDict, TrainState, nonpytree_field
@@ -14,7 +12,6 @@ from ogbench.impls.utils.networks import (
     DiscreteStateActionRepresentation,
     GCActor,
     GCDiscreteActor,
-    Param,
     StateRepresentation,
 )
 
@@ -54,8 +51,7 @@ class MQEAgent(flax.struct.PyTreeNode):
     @jax.jit
     def critic_loss(self, batch, grad_params, critic_rng):
         batch_size = self.config['batch_size']
-        key = jax.random.PRNGKey(critic_rng[1])
-        use_next_state = jax.random.bernoulli(key, p=self.config['next_state_sample'], shape=(batch_size,))
+        use_next_state = jax.random.bernoulli(critic_rng, p=self.config['next_state_sample'], shape=(batch_size,))
         use_next_state_mask = jnp.reshape(use_next_state, (batch_size, *[1] * (len(batch['observations'].shape) - 1)))
         intermediate_value_goals = jnp.where(use_next_state_mask, batch['next_observations'], batch['intermediate_value_goals'])
 
@@ -140,6 +136,7 @@ class MQEAgent(flax.struct.PyTreeNode):
             q_actions = jnp.clip(dist.sample(seed=rng), -1, 1)
         phi = self.network.select('phi')(batch['observations'], q_actions)
         psi_g = self.network.select('psi')(batch['actor_goals'])
+        # phi/psi_g have shape (ensemble=2, batch, latent); distance returns (2, batch).
         q1, q2 = -self.distance(phi, psi_g)
         q = jnp.minimum(q1, q2)
 
