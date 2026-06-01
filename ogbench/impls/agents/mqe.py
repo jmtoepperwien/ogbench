@@ -236,6 +236,10 @@ class MQEAgent(flax.struct.PyTreeNode):
         else:
             action_dim = ex_actions.shape[-1]
 
+        config['gamma'] = config['discount']
+
+        # Define encoders.
+        encoders = dict()
         if config['encoder'] is not None:
             encoder_module = encoder_modules[config['encoder']]
             if not config['use_latent']:
