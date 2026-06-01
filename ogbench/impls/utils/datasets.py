@@ -252,21 +252,24 @@ class GCDataset:
         )
 
         # Sample intermediate value goals (used by MQE's critic_loss).
-        lambda_ = self.config.get('lambda_', 0.0)
-        intermediate_geom_sample = self.config.get('intermediate_value_geom_sample', True)
-        intermediate_value_goal_idxs, intermediate_value_goal_offsets = self.sample_goals(
-            idxs,
-            self.config['value_p_curgoal'],
-            self.config['value_p_trajgoal'],
-            self.config['value_p_randomgoal'],
-            intermediate_geom_sample,
-            rng=rng,
-            discount=lambda_,
-            return_offset=True,
-        )
-        # Clip intermediate goals to be <= value goals (trajectory ordering).
-        intermediate_value_goal_idxs = np.minimum(intermediate_value_goal_idxs, value_goal_idxs)
-        intermediate_value_goal_offsets = np.minimum(intermediate_value_goal_offsets, value_goal_offsets)
+        if self.config.get('sample_intermediate_goals', False):
+            lambda_ = self.config.get('lambda_', 0.0)
+            intermediate_geom_sample = self.config.get('intermediate_value_geom_sample', True)
+            intermediate_value_goal_idxs, intermediate_value_goal_offsets = self.sample_goals(
+                idxs,
+                self.config['value_p_curgoal'],
+                self.config['value_p_trajgoal'],
+                self.config['value_p_randomgoal'],
+                intermediate_geom_sample,
+                rng=rng,
+                discount=lambda_,
+                return_offset=True,
+            )
+            # Clip intermediate goals to be <= value goals (trajectory ordering).
+            intermediate_value_goal_idxs = np.minimum(intermediate_value_goal_idxs, value_goal_idxs)
+            intermediate_value_goal_offsets = np.minimum(intermediate_value_goal_offsets, value_goal_offsets)
+            batch['intermediate_value_goals'] = self.get_observations(intermediate_value_goal_idxs)
+            batch['intermediate_value_goals_offsets'] = intermediate_value_goal_offsets
 
         batch['value_goals'] = self.get_observations(value_goal_idxs)
         batch['value_goals_offsets'] = value_goal_offsets  # used by MQE critic_loss

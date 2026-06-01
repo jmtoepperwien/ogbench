@@ -342,7 +342,8 @@ def get_config():
             value_p_trajgoal=1.0,  # Probability of using a future state in the same trajectory as the value goal. Note that we don't need to sample random states as goals because the off-diagonals for distance calculation can suffice for sampling random goals.
             value_p_randomgoal=0.0,  # Probability of using a random state as the value goal.
             value_geom_sample=True,  # Whether to use geometric distribution for sampling for future value goals.
-            intermediate_value_geom_sample=True,  # Whether to use geometric sampling for intermediate value goals, otherwise defaults to uniform sampling between current state and value_goals.
+            intermediate_value_geom_sample=True,  # Whether to use geometric sampling for intermediate value goals.
+            sample_intermediate_goals=True,  # Whether to sample intermediate value goals (MQE only).
             actor_p_curgoal=0.0,  # Probability of using the current state as the actor goal.
             actor_p_trajgoal=1.0,  # Probability of using a future state in the same trajectory as the actor goal.
             actor_p_randomgoal=0.0,  # Probability of using a random state as the actor goal.
