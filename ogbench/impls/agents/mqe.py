@@ -145,13 +145,19 @@ class MQEAgent(flax.struct.PyTreeNode):
                 adv = (adv - adv.mean()) / (adv.std() + 1e-8)
             exp_a = jnp.minimum(jnp.exp(self.config['alpha'] * adv), 100.0)
             actor_loss = -(exp_a * log_prob).mean()
-            return actor_loss, {
+            actor_info = {
                 'actor_loss': actor_loss,
                 'adv': adv.mean(),
                 'bc_log_prob': log_prob.mean(),
-                'mse': jnp.mean((dist.mode() - batch['actions']) ** 2),
-                'std': jnp.mean(dist.scale_diag),
             }
+            if not self.config['discrete']:
+                actor_info.update(
+                    {
+                        'mse': jnp.mean((dist.mode() - batch['actions']) ** 2),
+                        'std': jnp.mean(dist.scale_diag),
+                    }
+                )
+            return actor_loss, actor_info
 
         # DDPG+BC loss.
         if self.config['const_std']:
@@ -173,16 +179,23 @@ class MQEAgent(flax.struct.PyTreeNode):
 
         actor_loss = q_loss + bc_loss
 
-        return actor_loss, {
+        actor_info = {
             'actor_loss': actor_loss,
             'q_loss': q_loss,
             'bc_loss': bc_loss,
             'q_mean': q.mean(),
             'q_abs_mean': jnp.abs(q).mean(),
             'bc_log_prob': log_prob.mean(),
-            'mse': jnp.mean((dist.mode() - batch['actions']) ** 2),
-            'std': jnp.mean(dist.scale_diag),
         }
+        if not self.config['discrete']:
+            actor_info.update(
+                {
+                    'mse': jnp.mean((dist.mode() - batch['actions']) ** 2),
+                    'std': jnp.mean(dist.scale_diag),
+                }
+            )
+
+        return actor_loss, actor_info
 
     @jax.jit
     def total_loss(self, batch, grad_params, rng=None):
