@@ -128,8 +128,32 @@ class MQEAgent(flax.struct.PyTreeNode):
 
     @jax.jit
     def actor_loss(self, batch, grad_params, rng=None):
-        # Maximize log Q if actor_log_q is True (which is default).
         dist = self.network.select('actor')(batch['observations'], batch['actor_goals'], params=grad_params)
+        log_prob = dist.log_prob(batch['actions'])
+
+        if self.config['actor_loss'] == 'awr':
+            psi_s = self.network.select('psi')(batch['observations'])
+            psi_g = self.network.select('psi')(batch['actor_goals'])
+            phi = self.network.select('phi')(batch['observations'], batch['actions'])
+            # phi/psi_* have shape (ensemble=2, batch, latent); distance returns (2, batch).
+            v1, v2 = -self.distance(psi_s, psi_g)
+            v = jnp.minimum(v1, v2)
+            q1, q2 = -self.distance(phi, psi_g)
+            q = jnp.minimum(q1, q2)
+            adv = q - v
+            if self.config['normalize_advantages']:
+                adv = (adv - adv.mean()) / (adv.std() + 1e-8)
+            exp_a = jnp.minimum(jnp.exp(self.config['alpha'] * adv), 100.0)
+            actor_loss = -(exp_a * log_prob).mean()
+            return actor_loss, {
+                'actor_loss': actor_loss,
+                'adv': adv.mean(),
+                'bc_log_prob': log_prob.mean(),
+                'mse': jnp.mean((dist.mode() - batch['actions']) ** 2),
+                'std': jnp.mean(dist.scale_diag),
+            }
+
+        # DDPG+BC loss.
         if self.config['const_std']:
             q_actions = jnp.clip(dist.mode(), -1, 1)
         else:
@@ -141,11 +165,10 @@ class MQEAgent(flax.struct.PyTreeNode):
         q = jnp.minimum(q1, q2)
 
         # Normalize Q values by the absolute mean to make the loss scale invariant.
-        if self.config["normalize_q_loss"]:
+        if self.config['normalize_q_loss']:
             q_loss = -q.mean() / jax.lax.stop_gradient(jnp.abs(q).mean() + 1e-6)
         else:
             q_loss = -q.mean()
-        log_prob = dist.log_prob(batch['actions'])
         bc_loss = -(self.config['alpha'] * log_prob).mean()
 
         actor_loss = q_loss + bc_loss
@@ -324,6 +347,8 @@ def get_config():
             const_std=True,  # Whether to use constant standard deviation for the actor.
             discrete=False,  # Whether the action space is discrete.
             normalize_q_loss=True,  # Whether to normalize Q loss.
+            actor_loss='ddpgbc',  # Actor loss type ('ddpgbc' or 'awr').
+            normalize_advantages=False,  # Whether to normalize advantages before AWR weighting.
 
 
 
